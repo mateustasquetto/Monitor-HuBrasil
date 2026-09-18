@@ -3,40 +3,47 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Monitor EBSERH</title>
+  <title>Monitor-HuBRASIL</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0d6efd">
   <style>
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { background-color: #f4f6f9; margin: 0; padding: 20px; display: flex; justify-content: center; }
-    .card { background: #fff; border-radius: 12px; padding: 24px; max-width: 420px; width: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-    h2 { margin-top: 0; color: #1e293b; font-size: 1.3rem; text-align: center; }
-    label { font-size: 0.9rem; font-weight: 600; color: #475569; display: block; margin-bottom: 6px; }
-    input[type="text"] { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 1rem; margin-bottom: 16px; outline: none; }
-    input[type="text"]:focus { border-color: #0d6efd; }
+    body { background-color: #f4f6f9; margin: 0; padding: 16px; display: flex; justify-content: center; }
+    .card { background: #fff; border-radius: 12px; padding: 20px; max-width: 460px; width: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    h2 { margin: 0 0 16px 0; color: #1e293b; text-align: center; }
+    .search-box { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.95rem; margin-bottom: 10px; outline: none; }
+    .search-box:focus { border-color: #0d6efd; }
+    .select-all-wrap { display: flex; align-items: center; margin-bottom: 8px; font-size: 0.9rem; font-weight: 600; color: #334155; }
+    .list-container { max-height: 220px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; background: #fafafa; }
+    .hospital-item { display: flex; align-items: center; padding: 4px 0; font-size: 0.85rem; }
+    .hospital-item label { margin-left: 8px; cursor: pointer; }
     button { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: 0.2s; }
-    .btn-run { background-color: #0d6efd; color: #fff; margin-bottom: 12px; }
+    .btn-run { background-color: #0d6efd; color: #fff; margin-bottom: 10px; }
     .btn-run:disabled { background-color: #94a3b8; cursor: not-allowed; }
     .btn-tg { background-color: #229ED9; color: #fff; text-decoration: none; display: flex; align-items: center; justify-content: center; border-radius: 8px; padding: 12px; font-weight: 600; font-size: 0.95rem; }
-    #status { margin-top: 16px; padding: 12px; border-radius: 8px; font-size: 0.9rem; display: none; word-break: break-word; }
+    #status { margin-top: 14px; padding: 10px; border-radius: 8px; font-size: 0.85rem; display: none; }
     .success { background-color: #dcfce7; color: #166534; }
-    .warning { background-color: #fef9c3; color: #854d0e; }
     .error { background-color: #fee2e2; color: #991b1b; }
   </style>
 </head>
 <body>
 
 <div class="card">
-  <h2>Monitor EBSERH</h2>
+  <h2>Monitor-HuBRASIL</h2>
 
-  <label for="unidade">Selecione ou digite a Unidade:</label>
-  <input list="hospitais" id="unidade" placeholder="Clique na seta ou digite...">
-  <datalist id="hospitais"></datalist>
+  <input type="text" id="filtro" class="search-box" placeholder="Buscar unidade..." onkeyup="filtrarLista()">
+
+  <div class="select-all-wrap">
+    <input type="checkbox" id="checkTodos" onchange="alternarTodos(this)">
+    <label for="checkTodos" style="margin-left: 8px; cursor: pointer;">Selecionar Todos</label>
+  </div>
+
+  <div class="list-container" id="listaHospitais"></div>
 
   <button class="btn-run" id="btnExecutar" onclick="executarConsulta()">Executar Verificação</button>
   
   <a href="https://t.me/MonitorEbserth_bot" target="_blank" class="btn-tg">
-    💬 Abrir Conversa no Telegram
+    💬 Abrir no Telegram
   </a>
 
   <div id="status"></div>
@@ -54,50 +61,67 @@
     "HUCAM-UFES", "HUGG-UNIRIO", "HUGV-UFAM", "HUJB-UFCG", "HUJM-UFMT", 
     "HUL-UFS", "HULW-UFPB", "HUMAP-UFMS", "HUOL-UFRN", "HUPAA-UFAL", 
     "HUPES-UFBA", "HUSE", "HUSM-UFSM", "MCO-UFBA", "MEJC-UFRN"
-  ];
+  ].sort();
 
-  // Preenche o datalist em ordem alfabética
-  const datalist = document.getElementById("hospitais");
-  unidades.sort().forEach(u => {
-    const opt = document.createElement("option");
-    opt.value = u;
-    datalist.appendChild(opt);
+  const container = document.getElementById("listaHospitais");
+
+  // Renderiza checkboxes
+  unidades.forEach(u => {
+    const item = document.createElement("div");
+    item.className = "hospital-item";
+    item.innerHTML = `
+      <input type="checkbox" value="${u}" id="chk_${u}" class="chk-item">
+      <label for="chk_${u}">${u}</label>
+    `;
+    container.appendChild(item);
   });
 
+  function alternarTodos(master) {
+    document.querySelectorAll(".chk-item").forEach(cb => {
+      if (cb.closest(".hospital-item").style.display !== "none") {
+        cb.checked = master.checked;
+      }
+    });
+  }
+
+  function filtrarLista() {
+    const termo = document.getElementById("filtro").value.toUpperCase();
+    document.querySelectorAll(".hospital-item").forEach(item => {
+      const txt = item.innerText.toUpperCase();
+      item.style.display = txt.includes(termo) ? "flex" : "none";
+    });
+  }
+
   async function executarConsulta() {
-    const input = document.getElementById("unidade");
-    const valor = input.value.trim().toUpperCase();
+    const marcados = Array.from(document.querySelectorAll(".chk-item:checked")).map(cb => cb.value);
     const statusDiv = document.getElementById("status");
     const btn = document.getElementById("btnExecutar");
 
-    if (!valor || !unidades.includes(valor)) {
+    if (marcados.length === 0) {
       statusDiv.className = "error";
-      statusDiv.innerText = "Por favor, selecione uma unidade válida da lista.";
+      statusDiv.innerText = "Selecione pelo menos um hospital da lista.";
       statusDiv.style.display = "block";
       return;
     }
 
     btn.disabled = true;
-    btn.innerText = "Consultando...";
+    btn.innerText = `Consultando (${marcados.length})...`;
     statusDiv.style.display = "none";
 
     try {
-      const response = await fetch(`${API_URL}?hospital=${encodeURIComponent(valor)}`);
+      const response = await fetch(`${API_URL}?hospitais=${encodeURIComponent(marcados.join(','))}`);
       const data = await response.json();
 
       if (data.status === "success") {
         statusDiv.className = "success";
-        statusDiv.innerText = `Atualização de ${data.hospital}: ${data.dataHora}. Alerta enviado ao Telegram!`;
-      } else if (data.status === "warning") {
-        statusDiv.className = "warning";
-        statusDiv.innerText = data.message;
+        statusDiv.innerText = `Sucesso! ${data.total} unidades consultadas e enviadas ao Telegram.`;
       } else {
         statusDiv.className = "error";
         statusDiv.innerText = `Erro: ${data.message}`;
       }
     } catch (e) {
       statusDiv.className = "error";
-      statusDiv.innerText = "Falha ao conectar com o serviço. Tente novamente.";
+      statusDiv.innerText = "Falha de comunicação com o servidor.";
     } finally {
       btn.disabled = false;
       btn.innerText = "Executar Verificação";
@@ -105,7 +129,6 @@
     }
   }
 
-  // Registro do Service Worker para suporte PWA
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js');
   }
