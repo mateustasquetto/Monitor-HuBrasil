@@ -1,6 +1,6 @@
 {
-  "name": "Monitor EBSERH",
-  "short_name": "EBSERH",
+  "name": "Monitor-HuBRASIL",
+  "short_name": "HuBRASIL",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
