@@ -14,16 +14,23 @@
     .search-box { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.95rem; margin-bottom: 10px; outline: none; }
     .search-box:focus { border-color: #0d6efd; }
     .select-all-wrap { display: flex; align-items: center; margin-bottom: 8px; font-size: 0.9rem; font-weight: 600; color: #334155; }
-    .list-container { max-height: 220px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; background: #fafafa; }
+    .list-container { max-height: 180px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; background: #fafafa; }
     .hospital-item { display: flex; align-items: center; padding: 4px 0; font-size: 0.85rem; }
     .hospital-item label { margin-left: 8px; cursor: pointer; }
-    button { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: 0.2s; }
-    .btn-run { background-color: #0d6efd; color: #fff; margin-bottom: 10px; }
-    .btn-run:disabled { background-color: #94a3b8; cursor: not-allowed; }
+    
+    .panel-options { background: #f1f5f9; padding: 12px; border-radius: 8px; margin-bottom: 14px; }
+    .panel-options label { font-size: 0.85rem; font-weight: 600; color: #334155; display: block; margin-bottom: 6px; }
+    .panel-options select { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 8px; }
+
+    button { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .btn-run { background-color: #0d6efd; color: #fff; margin-bottom: 8px; }
+    .btn-stop { background-color: #dc2626; color: #fff; margin-bottom: 8px; display: none; }
+    .btn-run:disabled, .btn-stop:disabled { background-color: #94a3b8; cursor: not-allowed; }
     .btn-tg { background-color: #229ED9; color: #fff; text-decoration: none; display: flex; align-items: center; justify-content: center; border-radius: 8px; padding: 12px; font-weight: 600; font-size: 0.95rem; }
     #status { margin-top: 14px; padding: 10px; border-radius: 8px; font-size: 0.85rem; display: none; }
     .success { background-color: #dcfce7; color: #166534; }
     .error { background-color: #fee2e2; color: #991b1b; }
+    .info { background-color: #e0f2fe; color: #0369a1; }
   </style>
 </head>
 <body>
@@ -40,9 +47,29 @@
 
   <div class="list-container" id="listaHospitais"></div>
 
-  <button class="btn-run" id="btnExecutar" onclick="executarConsulta()">Executar Verificação</button>
+  <div class="panel-options">
+    <label>Modo de Execução:</label>
+    <select id="modoExecucao" onchange="mudarModo(this.value)">
+      <option value="unica">Buscar uma única vez (agora)</option>
+      <option value="continuo">Segundo plano (Servidor Google)</option>
+    </select>
+
+    <div id="campoIntervalo" style="display: none;">
+      <label>Intervalo de verificação:</label>
+      <select id="intervaloMinutos">
+        <option value="3">A cada 3 minutos</option>
+        <option value="5">A cada 5 minutos</option>
+        <option value="10">A cada 10 minutos</option>
+        <option value="15">A cada 15 minutos</option>
+        <option value="20">A cada 20 minutos</option>
+      </select>
+    </div>
+  </div>
+
+  <button class="btn-run" id="btnExecutar" onclick="processarExecucao()">Executar Verificação</button>
+  <button class="btn-stop" id="btnParar" onclick="pararMonitoramento()">⏹️ Parar Monitoramento Ativo</button>
   
-<a href="https://t.me/MonitorHuBrasilBot" target="_blank" class="btn-tg">
+  <a href="https://t.me/MonitorHuBrasilBot" target="_blank" class="btn-tg">
     💬 Abrir no Telegram
   </a>
 
@@ -65,7 +92,6 @@
 
   const container = document.getElementById("listaHospitais");
 
-  // Renderiza checkboxes
   unidades.forEach(u => {
     const item = document.createElement("div");
     item.className = "hospital-item";
@@ -92,7 +118,27 @@
     });
   }
 
-  async function executarConsulta() {
+  function mudarModo(val) {
+    document.getElementById("campoIntervalo").style.display = (val === "continuo") ? "block" : "none";
+    document.getElementById("btnExecutar").innerText = (val === "continuo") ? "Iniciar Monitoramento Contínuo" : "Executar Verificação";
+  }
+
+  async function checarStatusAtual() {
+    try {
+      const response = await fetch(`${API_URL}?acao=verificar_status`);
+      const data = await response.json();
+      if (data.status === "success" && data.ativo) {
+        document.getElementById("btnParar").style.display = "block";
+        const statusDiv = document.getElementById("status");
+        statusDiv.className = "info";
+        statusDiv.innerText = `O servidor está monitorando em segundo plano a cada ${data.minutos} minutos.`;
+        statusDiv.style.display = "block";
+      }
+    } catch (e) {}
+  }
+
+  async function processarExecucao() {
+    const modo = document.getElementById("modoExecucao").value;
     const marcados = Array.from(document.querySelectorAll(".chk-item:checked")).map(cb => cb.value);
     const statusDiv = document.getElementById("status");
     const btn = document.getElementById("btnExecutar");
@@ -105,16 +151,28 @@
     }
 
     btn.disabled = true;
-    btn.innerText = `Consultando (${marcados.length})...`;
     statusDiv.style.display = "none";
 
     try {
-      const response = await fetch(`${API_URL}?hospitais=${encodeURIComponent(marcados.join(','))}`);
+      let url = "";
+      if (modo === "unica") {
+        btn.innerText = "Consultando...";
+        url = `${API_URL}?acao=executar_agora&hospitais=${encodeURIComponent(marcados.join(','))}`;
+      } else {
+        btn.innerText = "Agendando rotina...";
+        const min = document.getElementById("intervaloMinutos").value;
+        url = `${API_URL}?acao=iniciar_monitoramento&hospitais=${encodeURIComponent(marcados.join(','))}&minutos=${min}`;
+      }
+
+      const response = await fetch(url);
       const data = await response.json();
 
       if (data.status === "success") {
         statusDiv.className = "success";
-        statusDiv.innerText = `Sucesso! ${data.total} unidades consultadas e enviadas ao Telegram.`;
+        statusDiv.innerText = data.message || `Sucesso! ${data.total} unidades consultadas e enviadas ao Telegram.`;
+        if (modo === "continuo") {
+          document.getElementById("btnParar").style.display = "block";
+        }
       } else {
         statusDiv.className = "error";
         statusDiv.innerText = `Erro: ${data.message}`;
@@ -124,10 +182,35 @@
       statusDiv.innerText = "Falha de comunicação com o servidor.";
     } finally {
       btn.disabled = false;
-      btn.innerText = "Executar Verificação";
+      mudarModo(document.getElementById("modoExecucao").value);
       statusDiv.style.display = "block";
     }
   }
+
+  async function pararMonitoramento() {
+    const statusDiv = document.getElementById("status");
+    const btnStop = document.getElementById("btnParar");
+
+    btnStop.disabled = true;
+    btnStop.innerText = "Interrompendo...";
+    
+    try {
+      const response = await fetch(`${API_URL}?acao=parar_monitoramento`);
+      const data = await response.json();
+      statusDiv.className = "success";
+      statusDiv.innerText = data.message;
+      btnStop.style.display = "none";
+    } catch (e) {
+      statusDiv.className = "error";
+      statusDiv.innerText = "Erro ao interromper rotina no servidor.";
+    } finally {
+      btnStop.disabled = false;
+      btnStop.innerText = "⏹️ Parar Monitoramento Ativo";
+      statusDiv.style.display = "block";
+    }
+  }
+
+  window.onload = checarStatusAtual;
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js');
